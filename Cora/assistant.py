@@ -1,13 +1,8 @@
-import pyaudio
-import speech_recognition as sr
 import pyttsx3
-import wikipedia
-import webbrowser
-import datetime
-import os
+import whisper
+import sounddevice as sd
+import numpy as np
 
-
-# import numpy
 
 engine = pyttsx3.init()
 engine.setProperty("rate", 180)
@@ -16,18 +11,41 @@ def speak(text):
     engine.say(text)
     engine.runAndWait()
 
-speak("I'm cora and ready to help you")
+# speak("I'm cora and ready to help you")
 
-voice_recognize= sr.Recognizer()
-with sr.Microphone() as source:
+model= whisper.load_model('base', device='cpu')
+
+def get_audio():
+    SAMPLE_RATE = 16000
+    SILENCE_TRESHOLD = 0.001
+    SILENCE_DURATION = 2
+    CHUNK_SIZE = 1024
+    audio_chunks = []
+    silence_chunks = 0
+    speaking_starting = False
+    chunks_for_silence = int(SILENCE_DURATION * SAMPLE_RATE / CHUNK_SIZE)
+    print(chunks_for_silence)
     print("Speak")
-    audio=voice_recognize.listen(source, timeout=5, phrase_time_limit=10)
-txt = voice_recognize.recognize_google(audio, language="ru")
-print(txt)
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=CHUNK_SIZE) as stream:
+        while True:
+            chunk, _ = stream.read(CHUNK_SIZE)
+            volume = np.abs(chunk).mean()
+            print(volume)
+            if volume > SILENCE_TRESHOLD:
+                speaking_starting = True
+                silence_chunks = 0
+                audio_chunks.append(chunk)
+            elif speaking_starting:
+                silence_chunks += 1
+                audio_chunks.append(chunk)
+                if silence_chunks >= chunks_for_silence:
+                    print("Silence detected")
+                    break
+    return np.concatenate(audio_chunks).flatten()
 
-if "Википедия" in txt:
-    webbrowser.open('https://wikipedia.org')
-    speak("I'm opening wikipedia")
-if 'Валик' in txt:
-    os.startfile("C:\\Riot Games\\Riot Client\\RiotClientServices.exe")
-    speak("I'm opening valorant")
+def get_transcribe():
+    audio = get_audio()
+    return model.transcribe(audio, fp16=False)
+if __name__ == '__main__':
+    result =get_transcribe()
+    print(result["text"])
